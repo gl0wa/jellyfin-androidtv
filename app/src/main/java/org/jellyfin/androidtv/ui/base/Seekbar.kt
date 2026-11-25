@@ -2,6 +2,9 @@ package org.jellyfin.androidtv.ui.base
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
@@ -12,6 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -22,6 +26,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -104,8 +109,20 @@ fun Seekbar(
 	val focused by interactionSource.collectIsFocusedAsState()
 	var progressOverride by remember { mutableStateOf<Float?>(null) }
 	val visibleProgress = progressOverride ?: progress
-	val knobAlpha by animateFloatAsState(if (focused) 1f else 0f)
+	var pointerScrubbing by remember { mutableStateOf(false) }
+	val knobAlpha by animateFloatAsState(if (focused || pointerScrubbing) 1f else 0f)
 	var scrubCancelJob by remember { mutableStateOf<Job?>(null) }
+	val currentOnScrubbing by rememberUpdatedState(onScrubbing)
+	val currentOnSeek by rememberUpdatedState(onSeek)
+
+	fun endScrubbing() {
+		scrubCancelJob?.cancel()
+		scrubCancelJob = coroutineScope.launch {
+			delay(300.milliseconds)
+			currentOnScrubbing?.invoke(false)
+			progressOverride = null
+		}
+	}
 
 	Box(
 		modifier = modifier
@@ -134,16 +151,31 @@ fun Seekbar(
 					if (onSeek != null) onSeek(newProgress)
 				}
 
-				if (isScrubbing && isKeyUp && onScrubbing != null) {
-					scrubCancelJob?.cancel()
-					scrubCancelJob = coroutineScope.launch {
-						delay(300.milliseconds)
-						onScrubbing(false)
-						progressOverride = null
-					}
-				}
+				if (isScrubbing && isKeyUp && onScrubbing != null) endScrubbing()
 
 				return@onKeyEvent isScrubbing
+			}
+			.pointerInput(enabled) {
+				if (!enabled) return@pointerInput
+
+				// Seek to the touched position, dragging scrubs until released
+				awaitEachGesture {
+					val down = awaitFirstDown()
+					down.consume()
+					scrubCancelJob?.cancel()
+					currentOnScrubbing?.invoke(true)
+					pointerScrubbing = true
+					progressOverride = (down.position.x / size.width).coerceIn(0f, 1f)
+
+					val released = horizontalDrag(down.id) { change ->
+						change.consume()
+						progressOverride = (change.position.x / size.width).coerceIn(0f, 1f)
+					}
+
+					pointerScrubbing = false
+					if (released) progressOverride?.let { currentOnSeek?.invoke(it) }
+					endScrubbing()
+				}
 			}
 			.focusable(interactionSource = interactionSource, enabled = enabled)
 			.drawWithContent {
