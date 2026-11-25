@@ -7,6 +7,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +33,8 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
@@ -51,6 +55,7 @@ fun PlayerOverlayLayout(
 ) = Box(
 	modifier = modifier
 		.fillMaxSize()
+		.overlayPointerInput(visibilityState)
 		.focusable()
 		.onPreviewKeyEvent {
 			// Reset hide timer on key presses
@@ -148,6 +153,26 @@ fun PlayerOverlayLayout(
 			}
 		}
 	}
+}
+
+@Composable
+private fun Modifier.overlayPointerInput(visibilityState: PlayerOverlayVisibilityState): Modifier {
+	val currentVisibilityState by rememberUpdatedState(visibilityState)
+
+	return this
+		// Reset hide timer on pointer activity (touch, mouse movement)
+		.pointerInput(Unit) {
+			awaitPointerEventScope {
+				while (true) {
+					awaitPointerEvent(PointerEventPass.Initial)
+					if (currentVisibilityState.visible) currentVisibilityState.show()
+				}
+			}
+		}
+		// Toggle overlay when tapping outside of the controls
+		.pointerInput(Unit) {
+			detectTapGestures(onTap = { currentVisibilityState.toggle() })
+		}
 }
 
 data class PlayerOverlayVisibilityState(
