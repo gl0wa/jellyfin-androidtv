@@ -6,6 +6,7 @@ import android.widget.ImageView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -103,14 +105,29 @@ class CardPresenter(
 				val item by _item.collectAsState()
 				val focused by _focused.collectAsState()
 
-				CardViewHolderContent(
-					item = item,
-					focused = focused,
-					showInfo = showInfo,
-					imageType = imageType,
-					staticHeight = staticHeight,
-					uniformAspect = uniformAspect,
-				)
+				// Images are rendered with AndroidView which consumes all touch events, forward taps to the card view so the
+				// leanback click listeners are triggered
+				Box(
+					modifier = Modifier.pointerInput(Unit) {
+						detectTapGestures(
+							onTap = { view.performClick() },
+							onLongPress = {
+								// The context menu uses the selected item so focus the card first
+								view.requestFocus()
+								view.post { view.performLongClick() }
+							},
+						)
+					}
+				) {
+					CardViewHolderContent(
+						item = item,
+						focused = focused,
+						showInfo = showInfo,
+						imageType = imageType,
+						staticHeight = staticHeight,
+						uniformAspect = uniformAspect,
+					)
+				}
 			}
 
 			_focused.value = view.isFocused
